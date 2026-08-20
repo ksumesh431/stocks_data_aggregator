@@ -7,6 +7,7 @@ import pandas as pd
 import yfinance as yf
 
 USD_INR_TICKER = "INR=X"
+BENCHMARK_TICKER = "QQQ"
 LOGGER = logging.getLogger(__name__)
 
 
@@ -139,3 +140,72 @@ def fetch_period_start_prices(tickers, period_start):
             "Could not find a pre-period Yahoo close for: {}".format(", ".join(missing))
         )
     return prices
+
+
+def _normalize_history_index(series):
+    """Normalize Yahoo's daily index so different downloads align cleanly."""
+    result = series.copy()
+    index = pd.to_datetime(result.index)
+    if getattr(index, "tz", None) is not None:
+        index = index.tz_localize(None)
+    result.index = index.normalize()
+    return result[~result.index.duplicated(keep="last")].sort_index()
+
+
+def _historical_close_frame(download, tickers):
+    """Convert a multi-ticker Yahoo download into a date-by-ticker frame."""
+    columns = {}
+    missing = []
+    for ticker in tickers:
+        closes = _close_series(download, ticker)
+        if closes.empty:
+            missing.append(ticker)
+        else:
+            columns[ticker] = _normalize_history_index(closes)
+
+    if missing:
+        raise RuntimeError(
+            "Yahoo Finance did not return historical prices for: "
+            + ", ".join(missing)
+        )
+    return pd.DataFrame(columns).sort_index()
+
+
+def fetch_benchmark_history(tickers, start_date, end_date):
+    """Fetch raw portfolio closes and dividend-adjusted QQQ benchmark prices."""
+    tickers = sorted(set(tickers))
+    download_start = pd.Timestamp(start_date) - timedelta(days=10)
+    download_end = pd.Timestamp(end_date) + timedelta(days=2)
+    common_arguments = {
+        "start": download_start.strftime("%Y-%m-%d"),
+        "end": download_end.strftime("%Y-%m-%d"),
+        "interval": "1d",
+        "progress": False,
+        "threads": False,
+        "group_by": "ticker",
+        "timeout": 20,
+    }
+
+    portfolio_download = yf.download(
+        tickers,
+        auto_adjust=False,
+        **common_arguments,
+    )
+    portfolio_closes = _historical_close_frame(portfolio_download, tickers)
+
+    # Auto-adjusted QQQ closes form a total-return series: distributions and
+    # splits are reflected without separately adding benchmark dividends.
+    benchmark_download = yf.download(
+        [BENCHMARK_TICKER],
+        auto_adjust=True,
+        **common_arguments,
+    )
+    benchmark_closes = _close_series(benchmark_download, BENCHMARK_TICKER)
+    if benchmark_closes.empty:
+        raise RuntimeError("Yahoo Finance did not return historical QQQ prices")
+
+    return {
+        "portfolio_closes": portfolio_closes,
+        "benchmark_prices": _normalize_history_index(benchmark_closes),
+        "ticker": BENCHMARK_TICKER,
+    }

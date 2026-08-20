@@ -4,6 +4,7 @@ import logging
 
 import pandas as pd
 
+from portfolio_report.benchmark import build_benchmark_comparison
 from portfolio_report.calculations import (
     build_holding_performance,
     build_validations,
@@ -14,6 +15,7 @@ from portfolio_report.calculations import (
 from portfolio_report.currency import calculate_inr_metrics
 from portfolio_report.excel_writer import ensure_output_available, write_workbook
 from portfolio_report.market_data import (
+    fetch_benchmark_history,
     fetch_latest_market_data,
     fetch_period_start_prices,
 )
@@ -184,6 +186,28 @@ def generate_portfolio_workbook(reports_directory, output_path, current_year=Non
         period_start=period_start,
     )
 
+    history_start = min(
+        trades["execution_time"].min(),
+        wallet["date"].min(),
+    )
+    LOGGER.info("Fetching historical portfolio and QQQ benchmark prices")
+    benchmark_history = fetch_benchmark_history(
+        trades["ticker"].tolist(),
+        history_start,
+        as_of,
+    )
+    LOGGER.info("Calculating portfolio versus QQQ comparisons")
+    benchmark_comparison = build_benchmark_comparison(
+        trades=trades,
+        wallet=wallet,
+        close_prices=benchmark_history["portfolio_closes"],
+        benchmark_prices=benchmark_history["benchmark_prices"],
+        current_year_result=current_year_result,
+        all_time_result=all_time_result,
+        current_year=current_year,
+        as_of=as_of,
+    )
+
     validations = build_validations(trades, holdings, brokerage)
     inventory = build_source_inventory(reports)
 
@@ -200,4 +224,5 @@ def generate_portfolio_workbook(reports_directory, output_path, current_year=Non
         as_of=as_of,
         current_year=current_year,
         fx=fx,
+        benchmark_comparison=benchmark_comparison,
     )

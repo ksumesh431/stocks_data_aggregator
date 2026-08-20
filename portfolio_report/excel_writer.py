@@ -406,6 +406,460 @@ def _add_inr_holding_columns(dataframe, historical_fx, current_fx):
     return result
 
 
+def _comparison_percentage_format(workbook, value, highlight=False):
+    """Create an easy-to-scan percentage format for benchmark cards."""
+    positive = value is not None and value >= 0
+    background = COLORS["yellow"] if highlight else (
+        COLORS["pale_green"] if positive else COLORS["pale_red"]
+    )
+    return workbook.add_format(
+        {
+            "bold": True,
+            "font_size": 22 if highlight else 19,
+            "font_color": COLORS["green"] if positive else COLORS["red"],
+            "bg_color": background,
+            "align": "center",
+            "valign": "vcenter",
+            "border": 1,
+            "border_color": COLORS["border"],
+            "num_format": "+0.00%;[Red]-0.00%;0.00%",
+        }
+    )
+
+
+def _comparison_formats(workbook):
+    """Create formats used only by the human-readable benchmark sheet."""
+    return {
+        "period_title": workbook.add_format(
+            {
+                "bold": True,
+                "font_size": 14,
+                "font_color": COLORS["white"],
+                "bg_color": COLORS["navy"],
+                "align": "left",
+                "valign": "vcenter",
+            }
+        ),
+        "period_dates": workbook.add_format(
+            {
+                "font_size": 10,
+                "font_color": COLORS["gray"],
+                "align": "left",
+                "valign": "vcenter",
+            }
+        ),
+        "card_label": workbook.add_format(
+            {
+                "bold": True,
+                "font_size": 10,
+                "font_color": COLORS["gray"],
+                "bg_color": COLORS["white"],
+                "align": "center",
+                "valign": "vcenter",
+                "text_wrap": True,
+                "border": 1,
+                "border_color": COLORS["border"],
+            }
+        ),
+        "subheading": workbook.add_format(
+            {
+                "bold": True,
+                "font_size": 11,
+                "font_color": COLORS["navy"],
+                "bg_color": COLORS["pale_blue"],
+                "align": "left",
+                "valign": "vcenter",
+            }
+        ),
+        "verdict": workbook.add_format(
+            {
+                "bold": True,
+                "font_size": 11,
+                "font_color": COLORS["navy"],
+                "bg_color": COLORS["cream"],
+                "align": "left",
+                "valign": "vcenter",
+                "text_wrap": True,
+                "border": 1,
+                "border_color": COLORS["border"],
+            }
+        ),
+        "guide_label": workbook.add_format(
+            {
+                "bold": True,
+                "font_color": COLORS["navy"],
+                "bg_color": COLORS["pale_blue"],
+                "valign": "top",
+            }
+        ),
+        "guide_text": workbook.add_format(
+            {
+                "font_color": COLORS["gray"],
+                "text_wrap": True,
+                "valign": "top",
+            }
+        ),
+    }
+
+
+def _write_comparison_card(
+    worksheet,
+    workbook,
+    formats,
+    first_col,
+    last_col,
+    start_row,
+    label,
+    value,
+    highlight=False,
+):
+    """Write one benchmark percentage as a compact two-part card."""
+    worksheet.merge_range(
+        start_row,
+        first_col,
+        start_row,
+        last_col,
+        label,
+        formats["card_label"],
+    )
+    if value is None:
+        worksheet.merge_range(
+            start_row + 1,
+            first_col,
+            start_row + 3,
+            last_col,
+            "NOT AVAILABLE",
+            formats["card_label"],
+        )
+        return
+    worksheet.merge_range(
+        start_row + 1,
+        first_col,
+        start_row + 3,
+        last_col,
+        value,
+        _comparison_percentage_format(workbook, value, highlight=highlight),
+    )
+
+
+def _lead_description(excess, strategy=True):
+    """Return a plain-language lead label and verdict for one comparison."""
+    if excess >= 0:
+        label = "YOU LED BY"
+        if strategy:
+            verdict = (
+                f"Your investment strategy beat QQQ by {excess * 100:.2f} "
+                "percentage points "
+                "after removing deposit and withdrawal timing."
+            )
+        else:
+            verdict = (
+                "With your exact contribution timing, your money beat a "
+                f"QQQ-only alternative by {excess * 100:.2f} percentage points."
+            )
+    else:
+        label = "QQQ LED BY"
+        if strategy:
+            verdict = (
+                f"QQQ beat your investment strategy by {abs(excess) * 100:.2f} "
+                "percentage points "
+                "after removing deposit and withdrawal timing."
+            )
+        else:
+            verdict = (
+                "With your exact contribution timing, a QQQ-only alternative "
+                f"led by {abs(excess) * 100:.2f} percentage points."
+            )
+    return label, verdict
+
+
+def _write_benchmark_chart(
+    worksheet,
+    workbook,
+    period,
+    start_row,
+    helper_row,
+):
+    """Add a two-question portfolio-versus-QQQ comparison chart."""
+    sheet_name = worksheet.get_name()
+    worksheet.write(helper_row, 16, "Question")
+    worksheet.write(helper_row, 17, "Your Portfolio")
+    worksheet.write(helper_row, 18, "QQQ")
+    worksheet.write(helper_row + 1, 16, "Strategy return")
+    worksheet.write(helper_row + 1, 17, period["portfolio_twr"])
+    worksheet.write(helper_row + 1, 18, period["benchmark_twr"])
+    worksheet.write(helper_row + 2, 16, "Same cash flows")
+    worksheet.write(helper_row + 2, 17, period["portfolio_mwr"])
+    worksheet.write(helper_row + 2, 18, period["benchmark_mwr"])
+
+    chart = workbook.add_chart({"type": "column"})
+    chart.add_series(
+        {
+            "name": [sheet_name, helper_row, 17],
+            "categories": [sheet_name, helper_row + 1, 16, helper_row + 2, 16],
+            "values": [sheet_name, helper_row + 1, 17, helper_row + 2, 17],
+            "fill": {"color": COLORS["green"]},
+            "border": {"color": COLORS["green"]},
+            "data_labels": {"value": True, "num_format": "0.0%"},
+        }
+    )
+    chart.add_series(
+        {
+            "name": [sheet_name, helper_row, 18],
+            "categories": [sheet_name, helper_row + 1, 16, helper_row + 2, 16],
+            "values": [sheet_name, helper_row + 1, 18, helper_row + 2, 18],
+            "fill": {"color": COLORS["blue"]},
+            "border": {"color": COLORS["blue"]},
+            "data_labels": {"value": True, "num_format": "0.0%"},
+        }
+    )
+    chart.set_title({"name": "Your portfolio versus QQQ — compare each pair"})
+    chart.set_y_axis(
+        {
+            "name": "Return",
+            "num_format": "0%",
+            "major_gridlines": {"visible": True, "line": {"color": "#E5E7EB"}},
+        }
+    )
+    chart.set_x_axis({"label_position": "low"})
+    chart.set_legend({"position": "bottom"})
+    chart.set_chartarea({"border": {"none": True}, "fill": {"color": "#FFFFFF"}})
+    chart.set_plotarea({"border": {"none": True}, "fill": {"color": "#FFFFFF"}})
+    chart.set_style(10)
+    chart.set_size({"width": 720, "height": 310})
+    chart.show_hidden_data()
+    worksheet.insert_chart(start_row, 7, chart, {"x_offset": 10, "y_offset": 4})
+
+
+def _write_benchmark_period(
+    worksheet,
+    workbook,
+    formats,
+    period,
+    start_row,
+    helper_row,
+):
+    """Write one current-year or all-time comparison panel."""
+    start_date = pd.Timestamp(period["start_date"]).strftime("%d %b %Y")
+    end_date = pd.Timestamp(period["end_date"]).strftime("%d %b %Y")
+    worksheet.merge_range(
+        start_row,
+        0,
+        start_row,
+        14,
+        f"{period['label']} COMPARISON",
+        formats["period_title"],
+    )
+    worksheet.merge_range(
+        start_row + 1,
+        0,
+        start_row + 1,
+        6,
+        f"Actual measurement period: {start_date} to {end_date}",
+        formats["period_dates"],
+    )
+
+    worksheet.merge_range(
+        start_row + 2,
+        0,
+        start_row + 2,
+        6,
+        "DID YOUR INVESTMENT STRATEGY BEAT QQQ?",
+        formats["subheading"],
+    )
+    twr_label, twr_verdict = _lead_description(period["twr_excess"], strategy=True)
+    _write_comparison_card(
+        worksheet,
+        workbook,
+        formats,
+        0,
+        1,
+        start_row + 3,
+        "YOUR STRATEGY RETURN",
+        period["portfolio_twr"],
+    )
+    _write_comparison_card(
+        worksheet,
+        workbook,
+        formats,
+        2,
+        3,
+        start_row + 3,
+        "QQQ SAME-PERIOD RETURN",
+        period["benchmark_twr"],
+    )
+    _write_comparison_card(
+        worksheet,
+        workbook,
+        formats,
+        4,
+        6,
+        start_row + 3,
+        twr_label,
+        abs(period["twr_excess"]),
+        highlight=True,
+    )
+    worksheet.merge_range(
+        start_row + 7,
+        0,
+        start_row + 8,
+        6,
+        twr_verdict,
+        formats["verdict"],
+    )
+
+    money_label = (
+        "ANNUALIZED MONEY-WEIGHTED RETURN"
+        if period["mwr_is_annualized"]
+        else "PERIOD MONEY-WEIGHTED RETURN"
+    )
+    worksheet.merge_range(
+        start_row + 10,
+        0,
+        start_row + 10,
+        6,
+        "HOW DID YOUR ACTUAL MONEY PERFORM WITH THE SAME CONTRIBUTION TIMING?",
+        formats["subheading"],
+    )
+    mwr_label, mwr_verdict = _lead_description(period["mwr_excess"], strategy=False)
+    _write_comparison_card(
+        worksheet,
+        workbook,
+        formats,
+        0,
+        1,
+        start_row + 11,
+        f"YOUR {money_label}",
+        period["portfolio_mwr"],
+    )
+    _write_comparison_card(
+        worksheet,
+        workbook,
+        formats,
+        2,
+        3,
+        start_row + 11,
+        "SAME CASH FLOWS IN QQQ",
+        period["benchmark_mwr"],
+    )
+    _write_comparison_card(
+        worksheet,
+        workbook,
+        formats,
+        4,
+        6,
+        start_row + 11,
+        mwr_label,
+        abs(period["mwr_excess"]),
+        highlight=True,
+    )
+    worksheet.merge_range(
+        start_row + 15,
+        0,
+        start_row + 16,
+        6,
+        mwr_verdict,
+        formats["verdict"],
+    )
+    _write_benchmark_chart(worksheet, workbook, period, start_row + 2, helper_row)
+
+
+def _write_benchmark_sheet(workbook, benchmark_comparison):
+    """Create a simplified, visual portfolio-versus-QQQ workbook sheet."""
+    worksheet = workbook.add_worksheet("QQQ Comparison")
+    worksheet.hide_gridlines(2)
+    worksheet.set_tab_color(COLORS["yellow"])
+    worksheet.set_column("A:G", 16)
+    worksheet.set_column("H:O", 12)
+    worksheet.set_column("Q:S", 2, None, {"hidden": True})
+    worksheet.set_row(0, 34)
+
+    formats = _comparison_formats(workbook)
+    title_format = workbook.add_format(
+        {
+            "bold": True,
+            "font_size": 24,
+            "font_color": COLORS["navy"],
+            "align": "center",
+            "valign": "vcenter",
+            "bg_color": COLORS["cream"],
+        }
+    )
+    subtitle_format = workbook.add_format(
+        {
+            "font_size": 10,
+            "font_color": COLORS["gray"],
+            "align": "center",
+            "valign": "vcenter",
+        }
+    )
+    worksheet.merge_range(
+        "A1:O2",
+        "HOW YOUR PORTFOLIO COMPARES WITH QQQ",
+        title_format,
+    )
+    worksheet.merge_range(
+        "A3:O3",
+        "USD total-return comparison using the same dates; QQQ dividends are reinvested",
+        subtitle_format,
+    )
+
+    _write_benchmark_period(
+        worksheet,
+        workbook,
+        formats,
+        benchmark_comparison["current_year"],
+        3,
+        1,
+    )
+    _write_benchmark_period(
+        worksheet,
+        workbook,
+        formats,
+        benchmark_comparison["all_time"],
+        21,
+        5,
+    )
+
+    guide_row = 39
+    worksheet.merge_range(
+        guide_row,
+        0,
+        guide_row,
+        14,
+        "HOW TO READ THIS SHEET",
+        formats["period_title"],
+    )
+    guide = [
+        (
+            "Strategy return",
+            "Time-weighted return removes deposits and withdrawals. This is the professional comparison for deciding whether your investment choices beat QQQ.",
+        ),
+        (
+            "Actual money return",
+            "Money-weighted return includes your contribution timing. The QQQ alternative uses the exact same cash-flow dates and amounts.",
+        ),
+        (
+            "Net P&L",
+            "Net profit remains useful in the dashboard, but it is not compared with QQQ because it is not a standardized rate of return.",
+        ),
+        (
+            "Data source",
+            "Portfolio history comes from the reports; historical portfolio and dividend-adjusted QQQ prices come from Yahoo Finance.",
+        ),
+    ]
+    for index, item in enumerate(guide, start=guide_row + 1):
+        label, description = item
+        worksheet.merge_range(index, 0, index, 2, label, formats["guide_label"])
+        worksheet.merge_range(index, 3, index, 14, description, formats["guide_text"])
+        worksheet.set_row(index, 34)
+
+    worksheet.freeze_panes(3, 0)
+    worksheet.set_landscape()
+    worksheet.fit_to_pages(1, 2)
+    worksheet.set_margins(0.25, 0.25, 0.5, 0.5)
+
+
 def _write_dashboard_sheet(workbook, formats, sheet_name, title, result, fx):
     """Create one current-year or all-time dashboard sheet."""
     worksheet = workbook.add_worksheet(sheet_name)
@@ -521,6 +975,14 @@ def _write_methodology(workbook, formats, inventory, as_of, current_year, fx):
             "XIRR is highlighted because it is the annualized money-weighted return: it accounts for the exact timing of external deposits and withdrawals and includes securities plus cash at the end.",
         ),
         (
+            "QQQ strategy comparison",
+            "Portfolio time-weighted return is compared with QQQ total return over the same funded days. Time weighting removes the effect of deposit and withdrawal timing, making this the appropriate test of the investment strategy.",
+        ),
+        (
+            "QQQ cash-flow comparison",
+            "A second comparison invests the portfolio's exact external cash flows into dividend-adjusted QQQ on matching dates. It compares money-weighted returns and answers how the investor's actual contribution timing performed.",
+        ),
+        (
             "Invested",
             "Remaining cost basis of open positions. Current-year opening positions, if any, are marked to the last Yahoo close before January 1.",
         ),
@@ -592,6 +1054,7 @@ def write_workbook(
     as_of,
     current_year,
     fx,
+    benchmark_comparison,
 ):
     """Write all dashboard, audit and normalized-data sheets."""
     output_path = Path(output_path)
@@ -615,6 +1078,7 @@ def write_workbook(
         all_time_result,
         fx,
     )
+    _write_benchmark_sheet(workbook, benchmark_comparison)
 
     xirr_cash_flows = pd.concat(
         [
