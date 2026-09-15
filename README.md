@@ -28,11 +28,12 @@ No API key is required. Stock prices and `INR=X` (USD/INR) are downloaded throug
 1. `generate_report.py` handles command-line arguments only.
 2. `report_discovery.py` finds the latest required exports and inventories every source file.
 3. `parsers.py` converts each spreadsheet layout into normalized tables.
-4. `market_data.py` retrieves the latest available intraday Yahoo prices, USD/INR, and any required year-opening prices.
+4. `market_data.py` retrieves the latest available intraday prices, historical closes, dividend-adjusted QQQ prices, USD/INR, and any required year-opening prices from Yahoo.
 5. `calculations.py` replays trades, reconciles to broker holdings, and calculates both reporting periods.
 6. `returns.py` builds external investor cash flows and calculates XIRR.
-7. `excel_writer.py` creates the styled dashboards and audit sheets.
-8. `workflow.py` connects those modules in that order.
+7. `benchmark.py` reconstructs daily account values and creates the fair portfolio-versus-QQQ comparisons.
+8. `excel_writer.py` creates the styled dashboards, the visual QQQ comparison, and audit sheets.
+9. `workflow.py` connects those modules in that order.
 
 There are intentionally no Python type annotations, per the project requirement. Functions still use descriptive names, docstrings, narrow responsibilities, and normalized column names.
 
@@ -64,6 +65,15 @@ The May 2026 broker account migration changes how commissions appear in the wall
 For current-year reporting, positions already held on January 1 are marked to the last Yahoo close before the year began. This prevents gains from an earlier year from leaking into the current-year result. The funding reports do not identify which remittance dollar funded each stock lot, so historical FX is allocated at portfolio level. This is suitable for performance tracking but is not a tax calculation.
 
 XIRR is the headline percentage because this is a personal portfolio with deposits occurring on different dates. The net P&L percentage remains visible as a useful cost-basis comparison, but it does not account for how long each contribution was invested. The `XIRR Cash Flows` sheet makes every input auditable. For the current-year calculation, any opening securities and cash are treated as a synthetic investment on January 1.
+
+## QQQ comparison sheet
+
+The `QQQ Comparison` sheet gives a current-year and an all-time answer to two different questions without requiring you to interpret an accounting table:
+
+- **Did the strategy beat QQQ?** Portfolio time-weighted return (TWR) is compared with dividend-adjusted QQQ over the same funded days. TWR removes the effect of deposit and withdrawal timing, so this is the standard comparison for judging the investment choices.
+- **Did the actual money beat QQQ?** Portfolio money-weighted return is compared with a synthetic QQQ investment that receives the exact same deposits and withdrawals on matching dates. This measures the combined effect of choices and contribution timing.
+
+Each period includes highlighted percentage-point differences, a plain-English verdict, and a portfolio-versus-QQQ chart. Current-year money-weighted figures are displayed as period returns when less than one year has elapsed; all-time figures of at least one year remain annualized. Net P&L is intentionally absent from the benchmark chart because profit dollars divided by cost basis is not a standardized benchmark return.
 
 ## Tests
 
