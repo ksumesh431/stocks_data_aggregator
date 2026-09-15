@@ -237,7 +237,7 @@ def _primary_percentage_format(workbook, value):
             "bold": True,
             "font_size": 28,
             "font_color": color,
-            "bg_color": COLORS["yellow"],
+            "bg_color": COLORS["pale_green"],
             "align": "center",
             "valign": "vcenter",
             "left": 2,
